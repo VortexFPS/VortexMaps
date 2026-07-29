@@ -1,0 +1,10 @@
+# Compiled maps and bake caches are build output. They are published as GitHub Release assets and
+# pinned by the game repo's data/maps.lock.json — never committed. See the restructure plan's D7:
+# hand-edited content is committed, compiled output is fetched.
+builds/
+
+# Local q3map2 working files.
+*.bak
+*.prt
+*.srf
+*.lin

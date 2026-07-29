@@ -1,0 +1,9 @@
+title Leave'em Behind
+description A very small race map
+author CuBe0wL, Cortez
+cdtrack 20
+gametype rc timelimit=10 qualifying_timelimit=5
+gametype cts
+
+settemp_for_type all g_balance_shotgun_weaponstart 0
+settemp_for_type all g_balance_shotgun_weaponstartoverride 1

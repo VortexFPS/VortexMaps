@@ -1,0 +1,6 @@
+-bsp + -minsamplesize 2 -np 20
+-light +
+-vis +
+-minimap +
+-sRGB
+Version: 17i

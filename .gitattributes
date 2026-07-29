@@ -1,0 +1,15 @@
+# Never normalize line endings anywhere in this repository.
+#
+# Most of the tree is binary (PNG, JPG, MD3, ASE), but it also holds real text that must stay
+# byte-stable: .map brush geometry, .shader scripts, .map.options compile flags, .mapinfo,
+# .waypoints. Those would get CRLF on a Windows checkout and LF on Linux, which makes the
+# published per-map archives differ per build host — so their sha256 in the game repo's
+# data/maps.lock.json would not reproduce.
+#
+# Same reasoning as data/.gitattributes in VortexArena. See its gotcha G2.
+#
+# NOTE: upstream's xonotic-maps.pk3dir ships a 4,655-byte .gitattributes that is deliberately NOT
+# carried over. It is 240 lines of `crlf=` directives, which git has treated as an inert custom
+# attribute since 1.7.2 replaced crlf with text — and it declares `*.map -crlf filter=mapclean`,
+# naming a filter driver defined nowhere in this project, over 150 real .map files.
+* -text

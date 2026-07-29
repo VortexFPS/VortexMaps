@@ -1,0 +1,6 @@
+-bsp +
+-light + -bouncescale 4
+-vis +
+-minimap +
+-sRGB
+Version: 9d

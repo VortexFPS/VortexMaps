@@ -1,0 +1,6 @@
+-bsp + -samplesize 6
+-light +
+-vis +
+-minimap +
+-sRGB
+Version: 4i

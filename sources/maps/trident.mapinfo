@@ -1,0 +1,16 @@
+title Trident
+description Fight in an abandoned building!
+author proraide
+cdtrack 2
+has weapons
+gametype dm
+gametype tdm
+gametype lms
+gametype ca
+gametype ft
+gametype ka
+gametype tka
+gametype kh
+gametype mayhem
+gametype tmayhem
+gametype surv

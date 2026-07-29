@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "note": "The stock maps were each compiled with whatever q3map2 the author had at the time, over many years. This file records what was actually used, per map. It is NOT a single pin, because no single compiler reproduces this set - see the reproducibility note in the restructure plan section 8.3.",
+  "distinctVersionsObserved": [
+    "0m",
+    "10g",
+    "12",
+    "12d",
+    "12g",
+    "13d",
+    "13f",
+    "14d",
+    "15g",
+    "17b",
+    "17i",
+    "1e",
+    "1f",
+    "2p",
+    "3b",
+    "4c",
+    "4i",
+    "5e",
+    "5g",
+    "6a",
+    "6g",
+    "7",
+    "7b",
+    "7d",
+    "8b",
+    "8e",
+    "8f",
+    "9d",
+    "9j"
+  ],
+  "recommendedForNewBuilds": null,
+  "maps": {
+    "_hudsetup": {
+      "version": "7",
+      "flags": "-bsp + -samplesize 4 -vis + -light + -minimap + -sRGB"
+    },
+    "afterslime": {
+      "version": "15g",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "atelier": {
+      "version": "6g",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "boil": {
+      "version": "12",
+      "flags": "-scale 0.8 -bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "bromine": {
+      "version": "2p",
+      "flags": "-bsp + -vis + -light + -minimap + -sRGB"
+    },
+    "catharsis": {
+      "version": "5e",
+      "flags": "-bsp + -light + -vis + -minimap + -scale 0.9 -sRGB"
+    },
+    "courtfun": {
+      "version": "13f",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "dance": {
+      "version": "8e",
+      "flags": "-bsp + -samplesize 4 -vis + -light + -gamma 0.7 -minimap + -sRGB"
+    },
+    "darkzone": {
+      "version": "14d",
+      "flags": "-bsp + -np 45 -light + -sphericalscale 0.9 -spotscale 0.9 -areascale 0.9 -skyscale 0.9 -vis + -minimap + -sRGB"
+    },
+    "erbium": {
+      "version": "9j",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "finalrage": {
+      "version": "4c",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "fuse": {
+      "version": "10g",
+      "flags": "-bsp + -light + -dirtscale 2 -bounce 8 -vis + -minimap + -sRGB"
+    },
+    "geoplanetary": {
+      "version": "5g",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "glowplant": {
+      "version": "17i",
+      "flags": "-bsp + -minsamplesize 2 -np 20 -light + -vis + -minimap + -sRGB"
+    },
+    "go": {
+      "version": "1e",
+      "flags": "-bsp + -vis + -light + -minimap + -sRGB"
+    },
+    "implosion": {
+      "version": "4i",
+      "flags": "-bsp + -samplesize 6 -light + -vis + -minimap + -sRGB"
+    },
+    "leave_em_behind": {
+      "version": "8b",
+      "flags": "-bsp + -samplesize 8 -minsamplesize 4 -light + -vis + -minimap + -sRGB"
+    },
+    "nexballarena": {
+      "version": "3b",
+      "flags": "-bsp + -samplesize 6 -np 60 -light + -bouncescale 1.15 -vis + -minimap + -sRGB"
+    },
+    "opium": {
+      "version": "0m",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "runningman": {
+      "version": "7d",
+      "flags": "-bsp + -samplesize 6 -light + -bouncescale 1.15 -exposure 225 -areascale 1.25 -pointscale 1.5 -vis + -minimap + -sRGB"
+    },
+    "runningmanctf": {
+      "version": "12d",
+      "flags": "-bsp + -samplesize 6 -light + -bouncescale 1.15 -exposure 225 -areascale 1.25 -pointscale 1.5 -vis + -minimap + -sRGB"
+    },
+    "silentsiege": {
+      "version": "17b",
+      "flags": "-scale 0.9 -bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "solarium": {
+      "version": "8e",
+      "flags": "-bsp + -vis + -light + -bounce 8 -dirty -dirtscale 1 -bouncescale 1 -areascale 0.10 -minimap + -sRGB"
+    },
+    "space-elevator": {
+      "version": "8f",
+      "flags": "-bsp + -vis + -light + -minimap + -sRGB"
+    },
+    "stormkeep": {
+      "version": "12g",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "techassault": {
+      "version": "7b",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "trident": {
+      "version": "1f",
+      "flags": "-bsp + -samplesize 4 -vis + -light + -backsplasharea -backsplash 1 23 -minimap + -sRGB"
+    },
+    "vorix": {
+      "version": "13d",
+      "flags": "-bsp + -light + -vis + -minimap + -sRGB"
+    },
+    "warfare": {
+      "version": "9d",
+      "flags": "-bsp + -light + -bouncescale 4 -vis + -minimap + -sRGB"
+    },
+    "xoylent": {
+      "version": "6a",
+      "flags": "-bsp + -samplesize 4 -minsamplesize 2 -light + -vis + -minimap + -sRGB"
+    }
+  }
+}

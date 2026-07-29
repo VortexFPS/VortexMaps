@@ -1,0 +1,17 @@
+title Solarium
+description Medium sized open map, good for 3 to 6 players
+author theShadow, SpiKe
+cdtrack 3
+has weapons
+gametype dm
+gametype tdm
+gametype lms
+gametype ca
+gametype ft
+gametype ka
+gametype tka
+gametype kh
+gametype duel
+gametype mayhem
+gametype tmayhem
+gametype surv

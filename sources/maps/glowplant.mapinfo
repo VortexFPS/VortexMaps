@@ -1,0 +1,18 @@
+title Glow Plant
+description A nuclear power plant with a LOT of blue glowy stuff...
+author tZork, Cuinnton, Debugger, Mirio
+cdtrack 14
+has weapons
+gametype dm
+gametype tdm
+gametype lms
+gametype ca
+gametype ft
+gametype ka
+gametype tka
+gametype kh
+gametype dom
+gametype mayhem
+gametype tmayhem
+gametype surv
+

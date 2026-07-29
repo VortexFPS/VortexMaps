@@ -1,0 +1,17 @@
+title Bromine
+description Rusty styled map for large games
+author packer
+has weapons
+cdtrack 22
+gametype dm
+gametype tdm
+gametype lms
+gametype ca
+gametype ft
+gametype ka
+gametype tka
+gametype kh
+gametype dom
+gametype mayhem
+gametype tmayhem
+gametype surv

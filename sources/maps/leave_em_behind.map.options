@@ -1,0 +1,6 @@
+-bsp + -samplesize 8 -minsamplesize 4
+-light +
+-vis +
+-minimap +
+-sRGB
+Version: 8b
