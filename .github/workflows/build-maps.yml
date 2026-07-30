@@ -22,8 +22,15 @@ on:
         type: boolean
         default: false
 
+# Least privilege: read-only for every job, and write granted to the one job that publishes.
+#
+# This is the shape GitHub's own security-hardening guidance asks for, and it is why the org's
+# read-only default GITHUB_TOKEN setting is correct and should stay that way. That setting controls what
+# a workflow gets when it says nothing; a workflow that declares `permissions` gets what it declares.
+# So the compile and compression jobs — which pull a third-party toolchain and run it over content —
+# hold a token that cannot write to the repository at all.
 permissions:
-  contents: write # the publish job creates a release and uploads assets
+  contents: read
 
 env:
   NETRADIANT_REF: master
@@ -191,6 +198,13 @@ jobs:
     needs: [build, textures]
     if: startsWith(github.ref, 'refs/tags/maps-') || inputs.publish
     runs-on: ubuntu-latest
+    # Creating a release and uploading assets is a `contents` write: GitHub has no separate `releases`
+    # scope, so this is the narrowest grant that can publish. It is coarser than we would like — the same
+    # token could push commits or move tags — which is the reason it is confined to this one job, and the
+    # reason the tag-protection ruleset (restructure G12) matters: it stops a compromised or buggy run
+    # from deleting or retargeting a map tag that released game builds already pin.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
