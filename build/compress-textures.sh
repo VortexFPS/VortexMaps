@@ -76,6 +76,18 @@ for tool in "$DDS_TOOL" convert compare; do
     }
 done
 
+# The converter must be executable. Git tracks the exec bit, but a Windows checkout does not set it, so
+# a local `chmod +x` can easily fail to reach the repository. When that happens xargs exits 126
+# ("found but not executable") and the only visible symptom is `printf: write error: Broken pipe` from
+# the pipe feeding it — which says nothing about the cause. Check up front instead.
+converter="$root/build/vendor/cached-converter.sh"
+if [ ! -x "$converter" ]; then
+    echo "error: $converter is not executable." >&2
+    echo "       fix it in git, not just on disk:" >&2
+    echo "         git update-index --chmod=+x build/vendor/cached-converter.sh" >&2
+    exit 1
+fi
+
 mkdir -p "$CACHEDIR"
 
 # cached-converter.sh writes output relative to its cwd, as dds/<path>.dds. So it runs inside sources/
@@ -93,7 +105,7 @@ export do_dds=true do_jpeg=false do_jpeg_if_not_dds=false \
 # xargs rather than a bash loop: the converter takes many files per invocation, so batching cuts
 # process startup, and -P gives parallelism the script does not have itself.
 printf './%s\n' "${images[@]}" \
-    | xargs -d '\n' -n 64 -P "$JOBS" "$root/build/vendor/cached-converter.sh" \
+    | xargs -d '\n' -n 64 -P "$JOBS" "$converter" \
     2> >(grep -vE '^Handling |^selfprofile_counter_' >&2 || true)
 
 if [ ! -d dds ]; then

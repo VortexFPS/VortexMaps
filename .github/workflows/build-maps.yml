@@ -66,7 +66,15 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 --branch "$NETRADIANT_REF" https://gitlab.com/xonotic/netradiant.git
-          cmake -S netradiant -B netradiant/build -DCMAKE_BUILD_TYPE=Release
+          # BUILD_RADIANT=OFF is required, not an optimisation: netradiant's configure step pulls GTK in
+          # as a hard requirement for the GUI (cmake/FindGTK2.cmake via pkg_check_modules), so a plain
+          # configure fails with "Package 'gtk+-3.0' ... not found" before it ever reaches the q3map2
+          # target. DOWNLOAD_GAMEPACKS=OFF skips a network fetch we have no use for.
+          cmake -S netradiant -B netradiant/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_RADIANT=OFF \
+            -DBUILD_TOOLS=ON \
+            -DDOWNLOAD_GAMEPACKS=OFF
           cmake --build netradiant/build --target q3map2 -j"$(nproc)"
           mkdir -p q3map2-bin
           cp "$(find netradiant/build -name q3map2 -type f -perm -u+x | head -1)" q3map2-bin/q3map2
