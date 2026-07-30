@@ -1,0 +1,157 @@
+# Compile the classic map set and publish it as per-role release assets.
+#
+# One job per map, deliberately. GitHub-hosted runners cap a JOB at 6 hours, and -vis/-light on a large
+# map is the expensive part, so a single job compiling 31 maps would risk the wall while a matrix gives
+# each map its own budget and runs them concurrently. Minutes are unmetered on public repos.
+#
+# The one plausible casualty is catharsis (1,085,397 faces), where a 16 GB / 6-hour runner would bite
+# first. If it does, nothing in the design breaks: the artifacts are release assets, so a locally or
+# self-hosted-built archive publishes through the identical path.
+#
+# .vmap maps are NOT built here. Their lighting is pre-baked by the game's own baker, with no q3map2
+# step at all — see the restructure plan section 9.2.
+name: build-maps
+
+on:
+  push:
+    tags: ['maps-*']
+  workflow_dispatch:
+    inputs:
+      maps:
+        description: 'Space-separated map names to build (default: all)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write # the publish job creates a release and uploads assets
+
+env:
+  # Pinned in build/q3map2.toolchain. One compiler for every map; the per-map flags come from each
+  # map's own .map.options, which are authoring decisions and are passed through unchanged.
+  NETRADIANT_REF: master
+
+jobs:
+  # ── Build q3map2 once and share it, rather than in each of 31 matrix jobs ──────────────────
+  compiler:
+    runs-on: ubuntu-latest
+    outputs:
+      cache-key: ${{ steps.key.outputs.key }}
+    steps:
+      - id: key
+        run: echo "key=q3map2-${{ env.NETRADIANT_REF }}-${{ runner.os }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore a previously built compiler
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: q3map2-bin
+          key: ${{ steps.key.outputs.key }}
+
+      # Deps are all headless: GTK3 is optional and belongs to the Radiant GUI, and X11 is only a
+      # -dev package at configure time, not a running display.
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git \
+            libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev libx11-dev
+
+      - name: Build q3map2
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$NETRADIANT_REF" https://gitlab.com/xonotic/netradiant.git
+          cmake -S netradiant -B netradiant/build -DCMAKE_BUILD_TYPE=Release -DBUILD_RADIANT=OFF
+          cmake --build netradiant/build --target q3map2 -j"$(nproc)"
+          mkdir -p q3map2-bin
+          cp netradiant/build/q3map2 q3map2-bin/
+          q3map2-bin/q3map2 -help 2>&1 | head -3 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: q3map2
+          path: q3map2-bin/q3map2
+          retention-days: 1
+
+  # ── Discover which maps to build, so the matrix is data-driven rather than hardcoded ───────
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      maps: ${{ steps.list.outputs.maps }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          if [ -n "${{ inputs.maps }}" ]; then
+            names="${{ inputs.maps }}"
+          else
+            names=$(cd sources/maps && ls *.map 2>/dev/null | sed 's/\.map$//' | tr '\n' ' ')
+          fi
+          echo "maps=$(printf '%s' "$names" | tr ' ' '\n' | grep . | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+          echo "will build: $names"
+
+  build:
+    needs: [compiler, discover]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one hard map must not cancel the other thirty
+      matrix:
+        map: ${{ fromJson(needs.discover.outputs.maps) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: q3map2
+          path: bin
+      - run: chmod +x bin/q3map2
+
+      - name: Compile ${{ matrix.map }}
+        run: |
+          python3 build/build-map.py "${{ matrix.map }}" --q3map2 bin/q3map2 --out "builds/q3map2"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map-${{ matrix.map }}
+          path: builds/q3map2/
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/maps-')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map-*
+          merge-multiple: true
+          path: builds/q3map2
+
+      # Packages per-role (one shared archive + one per map) and carries the per-item licence notices
+      # out of sources/ into whichever archive holds the art they cover. See build/split-pack.py for
+      # why that routing is a correctness requirement rather than a nicety.
+      - name: Package and emit the manifest
+        run: |
+          python3 build/publish.py builds/q3map2 \
+            --out dist --version "${GITHUB_REF_NAME#maps-}" --sources sources
+
+      - name: Verify nothing exceeds the release-asset limit
+        run: |
+          big=$(find dist -type f -size +2000M | head -1)
+          if [ -n "$big" ]; then echo "::error::$big exceeds the 2 GiB per-asset limit"; exit 1; fi
+          ls -la dist
+
+      - name: Publish the release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "Map set $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
+
+      # The manifest is what the game repo's data/maps.lock.json is generated from.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest
+          path: dist/manifest.json
