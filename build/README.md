@@ -1,7 +1,7 @@
 # The map build pipeline
 
-**Status: all three halves are wired. The compression pass has not run for real yet — no DXT
-compressor exists on the dev box — so its first execution will be on CI.**
+**Status: all three halves are wired. Compression is proven on CI. The q3map2 build is still
+iterating through configure-time dependencies.**
 
 ## The pieces
 
@@ -93,6 +93,15 @@ Verified locally: file discovery (3,229 images), the `--only` filter, the wrappe
 invocations through a stub, `compile-map.sh`'s product handling, and `publish.py` merging all three
 inputs (994 files -> 638 shared, 7 per-map, 349 prefab sources correctly dropped).
 
-**Not verified: the compression itself.** No DXT compressor and no ImageMagick `compare` exists on this
-machine, so `compress-textures.sh` has never actually compressed anything here. Its first real run will
-be the CI job. Expect that run to need a tweak.
+**Compression: verified on CI, and the numbers validate it.** The `textures` job succeeded on
+[run 30506435276](https://github.com/VortexFPS/VortexMaps/actions/runs/30506435276): **3,207 textures
+compressed**, 810 MB on disk, 486 MB as the uploaded artifact. That count is the validation worth
+noting — Xonotic's shipped `xonotic-20230620-maps.pk3` contains **exactly 3,207 `.dds` files** at 794 MB
+raw. Independently reproducing upstream's DDS set to the file is a strong signal the pipeline is right.
+The PSNR picker selected `dxt1` for the sampled cases, and the content-addressed cache populated under
+`~/.xonotic-cached-converter/`.
+
+**Still iterating: the q3map2 build.** CMake stops at the first `REQUIRED` miss, so each run surfaces one
+more configure-time dependency — GTK (fixed with `BUILD_RADIANT=OFF`), then OpenGL via
+`tools/heretic2` (fixed with `libgl1-mesa-dev`). Expect one or two more rounds. Nothing downstream is
+blocked: `split-pack.py` covers the frozen 0.8.6 set.
