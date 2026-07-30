@@ -1,0 +1,192 @@
+# Compile the classic map set and publish it as per-role release assets.
+#
+# One job per map, deliberately. GitHub-hosted runners cap a JOB at 6 hours, and -vis/-light on a large
+# map is the expensive part, so a single job compiling 31 maps would risk the wall while a matrix gives
+# each map its own budget and runs them concurrently. Minutes are unmetered on public repos.
+#
+# .vmap maps are NOT built here. Their lighting is pre-baked by the game's own baker, with no q3map2
+# step at all - see the restructure plan section 9.2.
+name: build-maps
+
+on:
+  push:
+    tags: ['maps-*']
+  workflow_dispatch:
+    inputs:
+      maps:
+        description: 'Space-separated map names to build (default: all)'
+        required: false
+        default: ''
+      publish:
+        description: 'Publish a release even on a manual run'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # the publish job creates a release and uploads assets
+
+env:
+  NETRADIANT_REF: master
+  # The game repo supplies the small part of the content a map references that does not live in
+  # sources/ - see build/map-compiler-config.pl. Both repos are public, so actions/checkout clones it
+  # anonymously; no cross-repo token or secret is involved.
+  ARENA_REPO: VortexFPS/VortexArena
+  ARENA_REF: main
+
+jobs:
+  # ── Build q3map2 once and share it, rather than in each of 31 matrix jobs ──────────────────
+  compiler:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache the built compiler
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: q3map2-bin
+          key: q3map2-${{ env.NETRADIANT_REF }}-${{ runner.os }}
+
+      # All headless: GTK3 is optional and belongs to the Radiant GUI, X11 is only a -dev package at
+      # configure time, and libpng is what makes q3map2 read our PNG sources.
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake git \
+            libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev libx11-dev
+
+      - name: Build q3map2
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch "$NETRADIANT_REF" https://gitlab.com/xonotic/netradiant.git
+          cmake -S netradiant -B netradiant/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build netradiant/build --target q3map2 -j"$(nproc)"
+          mkdir -p q3map2-bin
+          cp "$(find netradiant/build -name q3map2 -type f -perm -u+x | head -1)" q3map2-bin/q3map2
+
+      - name: Confirm it runs and reports PNG support
+        run: |
+          chmod +x q3map2-bin/q3map2
+          q3map2-bin/q3map2 -help 2>&1 | head -5 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: q3map2
+          path: q3map2-bin/q3map2
+          retention-days: 1
+
+  # ── Data-driven matrix, so adding a map needs no workflow edit ─────────────────────────────
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      maps: ${{ steps.list.outputs.maps }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          if [ -n "${{ inputs.maps }}" ]; then
+            names="${{ inputs.maps }}"
+          else
+            names=$(cd sources/maps && ls *.map 2>/dev/null | sed 's/\.map$//' | tr '\n' ' ')
+          fi
+          printf '%s' "$names" | tr ' ' '\n' | grep . | jq -R . | jq -cs . > maps.json
+          echo "maps=$(cat maps.json)" >> "$GITHUB_OUTPUT"
+          echo "building $(jq length maps.json) map(s): $names"
+
+  build:
+    needs: [compiler, discover]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false # one hard map must not cancel the other thirty
+      max-parallel: 10 # be a good neighbour on the shared runner pool
+      matrix:
+        map: ${{ fromJson(needs.discover.outputs.maps) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: maps
+
+      # Only the slice of the game's content a map compile actually reaches for. Sparse and blobless:
+      # data/ is ~900 MB in full, and this takes the core pack only. Cached so 31 jobs do not each
+      # re-clone it.
+      - name: Cache the game content slice
+        id: arena-cache
+        uses: actions/cache@v4
+        with:
+          path: arena
+          key: arena-core-${{ env.ARENA_REF }}-${{ hashFiles('maps/build/map-compiler-config.pl') }}
+
+      - name: Check out the game content slice
+        if: steps.arena-cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ARENA_REPO }}
+          ref: ${{ env.ARENA_REF }}
+          path: arena
+          sparse-checkout: data/core.pk3dir
+          sparse-checkout-cone-mode: true
+          filter: blob:none
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: q3map2
+          path: bin
+
+      - name: Compile ${{ matrix.map }}
+        working-directory: maps
+        env:
+          VORTEXARENA_ROOT: ${{ github.workspace }}/arena
+          VORTEXMAPS_Q3MAP2: ${{ github.workspace }}/bin/q3map2
+        run: |
+          chmod +x "$VORTEXMAPS_Q3MAP2" build/vendor/xonotic-map-compiler
+          cp build/map-compiler-config.pl "$HOME/.xonotic-map-compiler"
+          bash build/compile-map.sh "${{ matrix.map }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: map-${{ matrix.map }}
+          path: maps/builds/q3map2/${{ matrix.map }}/
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/maps-') || inputs.publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: map-*
+          path: builds/q3map2
+
+      # Packages per-role (one shared archive plus one per map) and carries the per-item licence
+      # notices out of sources/ into whichever archive holds the art they cover. That routing is a
+      # correctness requirement, not a nicety - see build/split-pack.py.
+      - name: Package and emit the manifest
+        run: |
+          version="${GITHUB_REF_NAME#maps-}"
+          [ "$version" = "$GITHUB_REF_NAME" ] && version="$(date -u +%Y.%m)-manual"
+          python3 build/publish.py builds/q3map2 --out dist --version "$version" --sources sources
+
+      - name: Check the release-asset limit
+        run: |
+          if find dist -type f -size +2000M | grep -q .; then
+            echo "::error::an archive exceeds the 2 GiB per-asset limit"; exit 1
+          fi
+          ls -la dist
+
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/maps-')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --title "Map set $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
+
+      # data/maps.lock.json in the game repo is generated from this.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: manifest
+          path: dist/manifest.json
