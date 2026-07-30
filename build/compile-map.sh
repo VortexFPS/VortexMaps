@@ -64,7 +64,21 @@ done
 for f in "$src/$map"_mini.*; do
     [ -f "$f" ] && { mkdir -p "$out/gfx"; mv "$f" "$out/gfx/"; moved=$((moved + 1)); }
 done
-# External lightmap pages land in sources/maps/<map>/lm_*.
+# External lightmap pages land in sources/maps/<map>/lm_*. q3map2 only writes TGA, and for a map with
+# an empty internal lightmap lump (stormkeep: lump 14 length 0) these pages ARE the lighting — 1024x1024
+# RGB, 3.1 MB apiece, which makes them the largest thing in the archive by a wide margin.
+#
+# So convert to PNG on the way out. Measured on stormkeep: 6,291,492 B of TGA becomes 3,225,035 B when
+# the .pk3's own deflate gets at it, but only 2,026,730 B as PNG — 37% smaller than zipping the TGA,
+# because PNG's per-scanline predictors handle smooth lighting gradients that raw deflate cannot.
+# The engine side needs no change: MapLoader asks the VFS for `maps/<map>/lm_NNNN` with NO extension and
+# the resolver probes .tga/.png/.jpg, which is also how stock Xonotic ships JPG pages.
+#
+# LOSSLESS IS NOT OPTIONAL HERE, and PNG is the only format on that list which qualifies. Odd pages are
+# DELUXEMAPS (MapLoader.cs:1084 — slot k is lm_{2k}, its deluxe partner is lm_{2k+1}), and a deluxemap
+# stores a packed per-texel light DIRECTION, not a colour. Lossy coding perturbs those vectors and tilts
+# the lighting; it would look plausible and be wrong, so every page is verified pixel-identical below
+# and the TGA is only removed once that passes.
 if [ -d "$src/$map" ]; then
     shopt -s nullglob
     pages=("$src/$map"/lm_*)
@@ -72,6 +86,7 @@ if [ -d "$src/$map" ]; then
         mkdir -p "$out/maps/$map"
         mv "${pages[@]}" "$out/maps/$map/"
         moved=$((moved + ${#pages[@]}))
+        python3 build/lightmaps-to-png.py "$out/maps/$map" || exit 1
     fi
     shopt -u nullglob
 fi

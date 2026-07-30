@@ -212,6 +212,12 @@ jobs:
           fi
           echo "q3map2 loads cleanly"
 
+      # compile-map.sh converts q3map2's external lightmap pages from TGA to PNG, which needs Pillow —
+      # not preinstalled on ubuntu-latest. Missing it fails the compile closed on ImportError rather than
+      # quietly shipping TGA pages, so this step is about not breaking the build, not about correctness.
+      - name: Install Pillow (lightmap page conversion)
+        run: python3 -m pip install --disable-pip-version-check --quiet Pillow
+
       - name: Compile ${{ matrix.map }}
         working-directory: maps
         env:
