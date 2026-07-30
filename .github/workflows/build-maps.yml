@@ -58,9 +58,13 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
+          # libgl1-mesa-dev is needed even with BUILD_RADIANT=OFF: BUILD_TOOLS builds every tool in the
+          # tree, and tools/heretic2/CMakeLists.txt does a REQUIRED find_package(OpenGL) at configure
+          # time. Found by the second CI run, after BUILD_RADIANT=OFF cleared the GTK failure.
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake git \
-            libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev libx11-dev
+            libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev \
+            libx11-dev libgl1-mesa-dev
 
       - name: Build q3map2
         if: steps.cache.outputs.cache-hit != 'true'
