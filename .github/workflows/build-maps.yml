@@ -34,6 +34,14 @@ permissions:
 
 env:
   NETRADIANT_REF: master
+  # ONE list, used by BOTH the job that builds q3map2 and the jobs that RUN it. They are separate
+  # runners, and the build job only downloads the binary as an artifact - so without installing the same
+  # libraries q3map2 dynamically links against, it dies at exec time with
+  # "error while loading shared libraries: libminizip.so.1". Keeping the list in one place is the point:
+  # the two jobs drifting apart is exactly how that happened.
+  Q3MAP2_DEPS: >-
+    libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev
+    libx11-dev libgl1-mesa-dev
   # The game repo supplies the small part of the content a map references that does not live in
   # sources/ - see build/map-compiler-config.pl. Both repos are public, so actions/checkout clones it
   # anonymously; no cross-repo token or secret is involved.
@@ -61,10 +69,7 @@ jobs:
           # libgl1-mesa-dev is needed even with BUILD_RADIANT=OFF: BUILD_TOOLS builds every tool in the
           # tree, and tools/heretic2/CMakeLists.txt does a REQUIRED find_package(OpenGL) at configure
           # time. Found by the second CI run, after BUILD_RADIANT=OFF cleared the GTK failure.
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake git \
-            libglib2.0-dev libjpeg-dev libpng-dev libwebp-dev libxml2-dev libminizip-dev \
-            libx11-dev libgl1-mesa-dev
+          sudo apt-get install -y --no-install-recommends build-essential cmake git $Q3MAP2_DEPS
 
       - name: Build q3map2
         if: steps.cache.outputs.cache-hit != 'true'
@@ -189,13 +194,31 @@ jobs:
           name: q3map2
           path: bin
 
+      # q3map2 is dynamically linked, and this is a DIFFERENT runner from the one that built it.
+      - name: Install the q3map2 runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends $Q3MAP2_DEPS
+
+      # Fail here with a readable reason rather than partway into a compile. `ldd -r` reports any missing
+      # object or unresolved symbol; without this the symptom was a bare exit 2 from the Perl wrapper and
+      # the real message ("libminizip.so.1: cannot open shared object file") was buried in its output.
+      - name: Check q3map2 can load
+        run: |
+          chmod +x bin/q3map2
+          if ldd -r bin/q3map2 2>&1 | grep -E 'not found|undefined symbol'; then
+            echo "::error::q3map2 has unsatisfied runtime dependencies - Q3MAP2_DEPS is incomplete"
+            exit 1
+          fi
+          echo "q3map2 loads cleanly"
+
       - name: Compile ${{ matrix.map }}
         working-directory: maps
         env:
           VORTEXARENA_ROOT: ${{ github.workspace }}/arena
           VORTEXMAPS_Q3MAP2: ${{ github.workspace }}/bin/q3map2
         run: |
-          chmod +x "$VORTEXMAPS_Q3MAP2" build/vendor/xonotic-map-compiler
+          chmod +x build/vendor/xonotic-map-compiler
           cp build/map-compiler-config.pl "$HOME/.xonotic-map-compiler"
           bash build/compile-map.sh "${{ matrix.map }}"
 
