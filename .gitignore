@@ -12,3 +12,6 @@ builds/
 # Python bytecode from the build scripts.
 __pycache__/
 *.pyc
+
+# The texture-compression pass writes here before it is moved to builds/.
+sources/dds/

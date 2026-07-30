@@ -40,26 +40,58 @@ def main() -> int:
     sp = load_split_pack()
 
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("builds", type=pathlib.Path, help="directory of per-map build output")
+    ap.add_argument("builds", type=pathlib.Path, help="per-map q3map2 output (builds/q3map2)")
     ap.add_argument("--out", type=pathlib.Path, required=True)
     ap.add_argument("--version", required=True)
     ap.add_argument("--sources", type=pathlib.Path, default=HERE.parent / "sources")
+    ap.add_argument("--dds", type=pathlib.Path, default=None,
+                    help="compressed texture tree from compress-textures.sh (builds/dds), already "
+                         "type-rooted as dds/textures/...")
+    ap.add_argument("--art-from", type=pathlib.Path, default=None,
+                    help="source tree to copy the non-compressible shipped art from: scripts/, env/, "
+                         "sound/, models/ meshes. Normally the same as --sources")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     if not args.builds.is_dir():
         sys.exit(f"error: no build directory at {args.builds}")
 
-    # Flatten the build tree into archive-relative paths, exactly the shape split-pack sees from a pk3.
+    # Flatten every input into archive-relative paths — exactly the shape split-pack sees from a pk3.
     files: dict[str, pathlib.Path] = {}
+
+    # 1. q3map2 output: builds/q3map2/<map>/<type-rooted>. Strip the per-map directory, because archive
+    #    content must be type-rooted (maps/, gfx/) rather than nested under the map name.
     for path in sorted(args.builds.rglob("*")):
         if not path.is_file():
             continue
         rel = path.relative_to(args.builds).as_posix()
-        # build-map.py writes builds/q3map2/<map>/..., so strip the per-map directory: the archive
-        # content must be type-rooted (maps/, dds/, scripts/), not nested under the map name.
         parts = rel.split("/", 1)
         files[parts[1] if len(parts) == 2 else rel] = path
+
+    # 2. Compressed textures. Already type-rooted (dds/textures/..., dds/models/...), so they merge in
+    #    as-is and the existing classifier splits them: dds/textures/map_boil/* to boil's archive,
+    #    dds/textures/exx/* to the shared one.
+    if args.dds is not None:
+        if not args.dds.is_dir():
+            sys.exit(f"error: --dds given but no directory at {args.dds}")
+        for path in sorted(args.dds.rglob("*")):
+            if path.is_file():
+                files.setdefault(path.relative_to(args.dds).as_posix(), path)
+
+    # 3. The shipped art that is neither compiled nor compressed: shader scripts, skybox JPEGs, sounds,
+    #    and model meshes. Without these a rebuilt archive has geometry and compressed textures but no
+    #    materials to apply them with. Sources (.map, .ase, .map.options) are excluded by classify().
+    if args.art_from is not None:
+        if not args.art_from.is_dir():
+            sys.exit(f"error: --art-from given but no directory at {args.art_from}")
+        SHIPPED_ART = ("scripts", "env", "sound", "models", "gfx")
+        for top in SHIPPED_ART:
+            base = args.art_from / top
+            if not base.is_dir():
+                continue
+            for path in sorted(base.rglob("*")):
+                if path.is_file():
+                    files.setdefault(path.relative_to(args.art_from).as_posix(), path)
 
     if not files:
         sys.exit(f"error: {args.builds} contains no files")

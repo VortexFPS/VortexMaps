@@ -75,6 +75,44 @@ jobs:
           path: q3map2-bin/q3map2
           retention-days: 1
 
+  # ── The art half. q3map2 makes geometry; this makes the textures that dress it ─────────────
+  #
+  # One job, not per-map: textures are overwhelmingly shared, so compressing them once and splitting
+  # afterwards is both correct and far cheaper than 31 jobs each redoing the shared sets.
+  textures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # libnvtt-bin gives nvcompress. ImageMagick is NOT optional: the converter picks the DXT format
+      # per texture by measuring PSNR, which needs `compare`.
+      - name: Install the compressor and ImageMagick
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libnvtt-bin imagemagick
+          nvcompress --help 2>&1 | head -2 || true
+
+      # Content-addressed, so editing one texture recompresses one texture. Keyed on the source tree so
+      # a texture change invalidates it and a .map change does not.
+      - name: Cache the compression results
+        uses: actions/cache@v4
+        with:
+          path: ~/.xonotic-cached-converter
+          key: dds-${{ runner.os }}-${{ hashFiles('sources/textures/**', 'sources/models/**') }}
+          restore-keys: dds-${{ runner.os }}-
+
+      - name: Compress textures to DDS
+        env:
+          DDS_TOOL: nvcompress
+        run: bash build/compress-textures.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dds
+          path: builds/dds/
+          retention-days: 1
+          if-no-files-found: error
+
   # ── Data-driven matrix, so adding a map needs no workflow edit ─────────────────────────────
   discover:
     runs-on: ubuntu-latest
@@ -150,7 +188,7 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: build
+    needs: [build, textures]
     if: startsWith(github.ref, 'refs/tags/maps-') || inputs.publish
     runs-on: ubuntu-latest
     steps:
@@ -159,15 +197,27 @@ jobs:
         with:
           pattern: map-*
           path: builds/q3map2
+      - uses: actions/download-artifact@v4
+        with:
+          name: dds
+          path: builds/dds
 
-      # Packages per-role (one shared archive plus one per map) and carries the per-item licence
-      # notices out of sources/ into whichever archive holds the art they cover. That routing is a
-      # correctness requirement, not a nicety - see build/split-pack.py.
+      # Three inputs, because a shippable archive needs all three: geometry from q3map2, textures from
+      # the compression pass, and the art that is neither compiled nor compressed (shader scripts,
+      # skybox JPEGs, sounds, model meshes) copied from sources. Missing the third would ship a map with
+      # textures and no materials to apply them with.
+      #
+      # Packages per-role (one shared archive plus one per map) and carries the per-item licence notices
+      # out of sources/ into whichever archive holds the art they cover — a correctness requirement, not
+      # a nicety. See build/split-pack.py.
       - name: Package and emit the manifest
         run: |
           version="${GITHUB_REF_NAME#maps-}"
           [ "$version" = "$GITHUB_REF_NAME" ] && version="$(date -u +%Y.%m)-manual"
-          python3 build/publish.py builds/q3map2 --out dist --version "$version" --sources sources
+          python3 build/publish.py builds/q3map2 \
+            --dds builds/dds \
+            --art-from sources \
+            --out dist --version "$version" --sources sources
 
       - name: Check the release-asset limit
         run: |

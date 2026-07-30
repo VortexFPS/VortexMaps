@@ -1,16 +1,19 @@
 # The map build pipeline
 
-**Status: publishing works and produced the live release. Compiling works. Turning a fresh compile into
-a shippable archive does not yet — see "the remaining gap".**
+**Status: all three halves are wired. The compression pass has not run for real yet — no DXT
+compressor exists on the dev box — so its first execution will be on CI.**
 
 ## The pieces
 
 | | what it does |
 |---|---|
-| `vendor/xonotic-map-compiler` | upstream's Perl wrapper, vendored unmodified. Drives q3map2 through the phases each map's `.map.options` asks for. See `vendor/README.md` |
-| `map-compiler-config.pl` | the wrapper's config, installed to `~/.xonotic-map-compiler`. All paths from the environment, so the vendored copy stays byte-identical to upstream |
-| `compile-map.sh` | compiles one map and moves the products into `builds/q3map2/<map>/`. Replaces upstream's `-optionsfile` script, which hardcodes a `misc/tools/` path we do not have |
-| `publish.py` | packages build output into per-role archives + manifest. Shares its classification and notice routing with `split-pack.py` by importing it, so the two cannot drift |
+| `vendor/xonotic-map-compiler` | upstream's Perl wrapper, **unmodified**. Drives q3map2 through the phases each map's `.map.options` asks for |
+| `vendor/cached-converter.sh` | upstream's asset converter, **unmodified**. PSNR-picked DXT format per texture, content-addressed cache |
+| `vendor/compress-texture` | upstream's compressor front-end. **One edit**, marked `VORTEX DIVERGENCE` — see the bug below |
+| `map-compiler-config.pl` | the wrapper's config, installed to `~/.xonotic-map-compiler`. All paths from the environment, so the vendored copies need no edits |
+| `compile-map.sh` | compiles one map, moves products into `builds/q3map2/<map>/`. Replaces upstream's `-optionsfile` script, which hardcodes a `misc/tools/` path we do not have |
+| `compress-textures.sh` | compresses `textures/` and `models/` to `builds/dds/dds/…` |
+| `publish.py` | merges the three inputs into per-role archives + manifest. Imports `split-pack.py` for classification and notice routing, so the two cannot drift |
 | `split-pack.py` | bootstraps the same archives from Xonotic's shipped pk3s. **This produced the live `maps-2026.07`** |
 | `q3map2.toolchain` | the compiler pin, plus each map's own flags for reference |
 
@@ -50,27 +53,46 @@ a blobless sparse checkout of `data/core.pk3dir` and caches it, so 31 matrix job
 Note it needs **working symlinks**, so it runs on the Linux runner. On a Windows dev box it wants
 developer mode or an elevated shell.
 
-## The remaining gap: nothing fills the shared archive on a fresh build
+## The three halves, and why all three are needed
 
-Found by running the chain end to end against a stubbed compiler. **q3map2 produces a map's geometry,
-not its art.** A build yields `maps/<map>.bsp`, external lightmap pages and a minimap — that is all. The
-shared archive comes out empty, because the textures a map references are not build output; in the
-shipped pack they are **DDS**, produced by a separate compression pass over the PNG sources. Upstream
-has the tool: `misc/tools/compress-texture`.
-
-The classic pipeline is really two independent halves:
+q3map2 produces a map's geometry, not its art. A shippable archive needs three inputs, and missing any
+one of them fails quietly rather than loudly:
 
 ```
-sources/**.png  ──[compress-texture]──►  dds/…             ─┐
-sources/**.map  ──[q3map2 via wrapper]──►  .bsp, lm_*, mini ├──► archives
-sources/scripts, models, sound  ──(copied)──────────────────┘
+sources/**.{png,jpg}  ──[compress-textures.sh]──►  dds/textures, dds/models   ─┐
+sources/**.map        ──[compile-map.sh -> wrapper -> q3map2]──►  .bsp, lm_*, mini  ├──► publish.py ──► archives
+sources/{scripts,env,sound,models,gfx}  ──(copied verbatim)────────────────────┘
 ```
 
-`split-pack.py` sidesteps this by taking the *already-compiled* art out of Xonotic's shipped pk3s —
-correct for the frozen 0.8.6 set, and what `maps-2026.07` was built from. A rebuild-from-sources needs
-the compression half wired before its output is shippable, or a rebuilt map arrives with geometry and no
-textures.
+- **Geometry only** would ship a map that loads with no textures.
+- **Geometry + textures** would ship a map with textures and no `.shader` files to apply them with —
+  which is why `publish.py` takes `--art-from` as well.
+- The classifier needs no new rules for any of it: it already keys on `map_<name>/` anywhere in a path,
+  so `dds/textures/map_boil/*` goes to boil's archive and `dds/textures/exx/*` to the shared one.
 
-**So what the workflow is good for today is verifying a map still compiles.** That is worth having — it
-catches a source edit that breaks the build — and it is not the same as producing a release. It only
-publishes on a `maps-*` tag, so a routine run cannot mistake one for the other.
+`compress-textures.sh` wraps the vendored `cached-converter.sh`, which does the part worth not
+reimplementing: for each texture it tries several DXT formats and picks by **measured PSNR** rather than
+by a fixed rule. Its cache is content-addressed, so editing one texture recompresses one texture. DDS
+rather than PNG is deliberate — the game hands these to the GPU still compressed, and re-encoding would
+enlarge them on disk and multiply VRAM by four to eight (restructure section 4.3).
+
+`env/` is excluded on purpose: skyboxes ship as JPEG, matching upstream's pack, which has `dds/textures`
+and `dds/models` and no `dds/env`.
+
+### A bug found in the vendored compressor
+
+`compress-texture`'s nvcompress path mapped `dxt3 -> -bc3` and `dxt5 -> -bc5`. The correspondence is
+DXT1=BC1, **DXT3=BC2, DXT5=BC3**, and `-bc5` is ATI2/3Dc — a two-channel format for normal maps, so a
+dxt5 request produced a file with no usable colour. The PSNR picker would normally reject that in favour
+of dxt1, which is exactly why it stayed hidden: it degrades quality silently instead of failing. Fixed
+in the vendored copy and marked `VORTEX DIVERGENCE`; it is the only edit in that file.
+
+### What is verified, and what is not
+
+Verified locally: file discovery (3,229 images), the `--only` filter, the wrapper's real q3map2
+invocations through a stub, `compile-map.sh`'s product handling, and `publish.py` merging all three
+inputs (994 files -> 638 shared, 7 per-map, 349 prefab sources correctly dropped).
+
+**Not verified: the compression itself.** No DXT compressor and no ImageMagick `compare` exists on this
+machine, so `compress-textures.sh` has never actually compressed anything here. Its first real run will
+be the CI job. Expect that run to need a tweak.
