@@ -1,7 +1,9 @@
 {
   "schema": 1,
-  "note": "The stock maps were each compiled with whatever q3map2 the author had at the time, over many years. This file records what was actually used, per map. It is NOT a single pin, because no single compiler reproduces this set - see the reproducibility note in the restructure plan section 8.3.",
-  "distinctVersionsObserved": [
+  "note": "Per-map compile flags are deliberate authoring decisions - a mapper tunes lighting per map - so build-map.py reads each map's own .map.options and passes those flags through unchanged. That is what upstream's xonotic-map-compiler does too. The 'version' field is provenance rather than configuration: it records which q3map2 each author happened to have, spanning years. Builds here use the single pinned compiler in 'pinnedVersion' with each map's own flags, and the resulting archives are what the game repo's data/maps.lock.json hashes.",
+  "pinnedVersion": null,
+  "pinnedSource": "https://gitlab.com/xonotic/netradiant (tools/quake3/q3map2)",
+  "distinctVersionsObservedUpstream": [
     "0m",
     "10g",
     "12",
@@ -32,7 +34,6 @@
     "9d",
     "9j"
   ],
-  "recommendedForNewBuilds": null,
   "maps": {
     "_hudsetup": {
       "version": "7",
