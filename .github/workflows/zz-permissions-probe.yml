@@ -1,0 +1,32 @@
+# TEMPORARY probe. Answers one question: with the org's default GITHUB_TOKEN set to read-only, does a
+# workflow-level `permissions: contents: write` actually take effect, or is it capped?
+#
+# Delete this file once the answer is recorded. It writes nothing and touches no content.
+name: zz-permissions-probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  asked-for-write:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: What can this token actually do?
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "--- the API's own view of this token's permissions ---"
+          # The X-OAuth-Scopes / permissions surface for an Actions token shows up on the repo endpoint.
+          gh api repos/${{ github.repository }} --jq '{permissions}' || true
+          echo
+          echo "--- can it actually create a release? (dry probe: list, do not create) ---"
+          gh api repos/${{ github.repository }}/releases --jq 'length' \
+            && echo "read OK"
+          echo
+          echo "Compare against the 'GITHUB_TOKEN Permissions' block at the top of this job's log."
+          echo "If that block says Contents: write, the workflow-level grant works under a read-only default."
