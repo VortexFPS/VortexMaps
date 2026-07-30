@@ -259,7 +259,9 @@ jobs:
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
             || gh release create "$GITHUB_REF_NAME" --title "Map set $GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" dist/*.zip --clobber
+          # .pk3, not .zip: a pk3 IS a zip, and the game mounts one natively, so fetch-maps.py installs
+          # these as-is rather than extracting them. See build/README.md.
+          gh release upload "$GITHUB_REF_NAME" dist/*.pk3 --clobber
 
       # data/maps.lock.json in the game repo is generated from this.
       - uses: actions/upload-artifact@v4

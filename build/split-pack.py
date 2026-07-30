@@ -6,8 +6,8 @@ xonotic-20230620-maps.pk3, which is past GitHub's 100 MB per-file limit for git 
 chance of updating one map without re-downloading all of them. This produces what
 VortexArena/data/maps.lock.json pins instead:
 
-    shared-<version>.zip     art no single map owns  (~405 MB: dds/, models/, sound/, scripts/, env/)
-    <map>-q3map2.zip   x31   that map's own files    (~191 MB total, median ~4 MB)
+    shared-<version>.pk3     art no single map owns  (~405 MB: dds/, models/, sound/, scripts/, env/)
+    <map>.pk3   x31   that map's own files    (~191 MB total, median ~4 MB)
 
 Why split by role rather than purely per map: 68% of the pack is shared art. Naive per-map archives
 would either duplicate that 405 MB across 31 maps, or need per-map dependency analysis. See the
@@ -214,14 +214,14 @@ def main() -> int:
                 out.writestr(rel, path.read_bytes())
         tmp.replace(archive)
 
-    shared_archive = args.out / f"shared-{args.version}.zip"
+    shared_archive = args.out / f"shared-{args.version}.pk3"
     write_archive(shared_archive, buckets["shared"], "shared")
     digest, size = sha256_and_size(shared_archive)
     manifest["shared"] = {"file": shared_archive.name, "sha256": digest, "size": size}
     print(f"\nwrote {shared_archive.name}  {size / 2**20:.1f} MB")
 
     for name in maps:
-        archive = args.out / f"{name}-q3map2.zip"
+        archive = args.out / f"{name}.pk3"
         write_archive(archive, buckets[f"map:{name}"], f"map:{name}")
         digest, size = sha256_and_size(archive)
         manifest[name] = {"file": archive.name, "sha256": digest, "size": size}

@@ -11,8 +11,8 @@ given archive, so they must produce the same thing.
 
 Output, per the restructure plan section 5.3.1:
 
-    shared-<version>.zip     art no single map owns
-    <map>-q3map2.zip   xN    that map's own files
+    shared-<version>.pk3     art no single map owns
+    <map>.pk3   xN    that map's own files
     manifest.json            what data/maps.lock.json is generated from
 """
 from __future__ import annotations
@@ -157,14 +157,14 @@ def main() -> int:
                 out.writestr(rel, path.read_bytes())
         tmp.replace(archive)
 
-    shared = args.out / f"shared-{args.version}.zip"
+    shared = args.out / f"shared-{args.version}.pk3"
     write(shared, buckets["shared"], "shared")
     digest, size = sp.sha256_and_size(shared)
     manifest["shared"] = {"file": shared.name, "sha256": digest, "size": size}
     print(f"\nwrote {shared.name}  {size / 2**20:.1f} MB")
 
     for name in maps:
-        archive = args.out / f"{name}-q3map2.zip"
+        archive = args.out / f"{name}.pk3"
         write(archive, buckets[f"map:{name}"], f"map:{name}")
         digest, size = sp.sha256_and_size(archive)
         manifest[name] = {"file": archive.name, "sha256": digest, "size": size}
