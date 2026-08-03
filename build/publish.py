@@ -3,11 +3,9 @@
 
     python build/publish.py builds/q3map2 --out dist --version 2026.08 --sources sources
 
-The counterpart to split-pack.py: same output shape and the same licence-notice routing, but reading
-from per-map build directories (what build-map runs produce) rather than from Xonotic's bundled pk3s.
-The classification and archive-writing logic is imported from split-pack.py rather than duplicated,
-because the two agreeing is the point — the game's data/maps.lock.json cannot tell which produced a
-given archive, so they must produce the same thing.
+THE pipeline entry point: a release is produced by compiling sources/ with q3map2 and packaging the
+result here. Nothing reads Xonotic's repositories — the one-off bootstrap that did (build/split-pack.py)
+has been retired, and its classification half now lives in build/packlib.py.
 
 Output, per the restructure plan section 5.3.1:
 
@@ -19,26 +17,47 @@ from __future__ import annotations
 
 import argparse
 import collections
-import importlib.util
 import json
 import pathlib
 import sys
 
+import packlib as sp
+
 HERE = pathlib.Path(__file__).resolve().parent
 
 
-def load_split_pack():
-    """Import split-pack.py by path — its filename is not a valid module name."""
-    spec = importlib.util.spec_from_file_location("split_pack", HERE / "split-pack.py")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["split_pack"] = module  # @dataclass resolves the module by name
-    spec.loader.exec_module(module)
-    return module
+# sources/ holds LOSSLESS MASTERS beside the shipped derivatives: .png next to .jpg/.dds, .wav next to
+# .ogg. The release must carry the derivative only — the engine reads that, and shipping both roughly
+# doubles the affected content (sources/textures alone is 2975 files / 1.2 GB against the 168 loose
+# textures upstream actually ships). Keyed on what upstream ships: dds, jpg, ogg.
+#
+# Deliberately a PREFERENCE, not a denylist: a master with no derivative IS the shipped form and passes
+# through. That is what keeps this from becoming the next silent drop — the same failure mode that cost
+# us .waypoints.cache. See VortexArena planning/bot-ai-parity-2026-08-03.md.
+MASTER_FORMATS = {
+    ".png": (".dds", ".jpg"),
+    ".tga": (".dds", ".jpg"),
+    ".jpg": (".dds",),   # a .jpg is itself the shipped form for skyboxes/levelshots, but a texture that
+                         # HAS a .dds ships compressed only — upstream keeps just the 168 without one
+    ".wav": (".ogg",),
+}
+
+
+def shipped_counterpart(rel: str, files: dict, art_from: pathlib.Path) -> bool:
+    """True when `rel` is a master whose shipped derivative is already available, so skip it."""
+    stem, dot, ext = rel.rpartition(".")
+    if not dot:
+        return False
+    for alt in MASTER_FORMATS.get("." + ext.lower(), ()):
+        if alt == ".dds":
+            if f"dds/{stem}{alt}" in files:
+                return True
+        elif f"{stem}{alt}" in files or (art_from / f"{stem}{alt}").is_file():
+            return True
+    return False
 
 
 def main() -> int:
-    sp = load_split_pack()
-
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("builds", type=pathlib.Path, help="per-map q3map2 output (builds/q3map2)")
     ap.add_argument("--out", type=pathlib.Path, required=True)
@@ -50,13 +69,16 @@ def main() -> int:
     ap.add_argument("--art-from", type=pathlib.Path, default=None,
                     help="source tree to copy the non-compressible shipped art from: scripts/, env/, "
                          "sound/, models/ meshes. Normally the same as --sources")
+    ap.add_argument("--expect-packs", type=int, default=None,
+                    help="fail unless exactly this many archives are produced (31 for the stock set: "
+                         "30 maps from sources/maps/*.map, plus the shared archive)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
     if not args.builds.is_dir():
         sys.exit(f"error: no build directory at {args.builds}")
 
-    # Flatten every input into archive-relative paths — exactly the shape split-pack sees from a pk3.
+    # Flatten every input into archive-relative paths — the shape classify() expects.
     files: dict[str, pathlib.Path] = {}
 
     # 1. q3map2 output: builds/q3map2/<map>/<type-rooted>. Strip the per-map directory, because archive
@@ -81,17 +103,31 @@ def main() -> int:
     # 3. The shipped art that is neither compiled nor compressed: shader scripts, skybox JPEGs, sounds,
     #    and model meshes. Without these a rebuilt archive has geometry and compressed textures but no
     #    materials to apply them with. Sources (.map, .ase, .map.options) are excluded by classify().
+    #
+    #    `maps` is in this list for the AUTHORED, NON-COMPILED files that live beside each .map:
+    #    <map>.waypoints and <map>.waypoints.hardwired (the bot navigation graph, and the map author's
+    #    hand-placed jump/teleport/drop links that no tracewalk can re-derive), plus <map>.mapinfo and the
+    #    levelshot. q3map2 emits none of them, so without this a rebuilt map ships a .bsp with no bot
+    #    graph at all: bots fall back to deriving links by tracewalk at load, which drops every hardwired
+    #    link and leaves a large share of a map's waypoints as nodes a bot can walk into and never out of.
+    #    The true sources in the same directory (.map, .map.options, .rb, .pl) are dropped by classify().
+    #    Compiled output still wins — this gather is setdefault and builds/ is read first.
+    #    See VortexArena planning/bot-ai-parity-2026-08-03.md D1/D2.
     if args.art_from is not None:
         if not args.art_from.is_dir():
             sys.exit(f"error: --art-from given but no directory at {args.art_from}")
-        SHIPPED_ART = ("scripts", "env", "sound", "models", "gfx")
+        SHIPPED_ART = ("scripts", "env", "cubemaps", "sound", "models", "gfx", "maps", "textures")
         for top in SHIPPED_ART:
             base = args.art_from / top
             if not base.is_dir():
                 continue
             for path in sorted(base.rglob("*")):
-                if path.is_file():
-                    files.setdefault(path.relative_to(args.art_from).as_posix(), path)
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(args.art_from).as_posix()
+                if shipped_counterpart(rel, files, args.art_from):
+                    continue
+                files.setdefault(rel, path)
 
     if not files:
         sys.exit(f"error: {args.builds} contains no files")
@@ -112,6 +148,27 @@ def main() -> int:
         else:
             buckets["shared"].append(name)
 
+    # CONSERVATION: every runtime file that entered the pipeline must leave it in exactly one archive.
+    #
+    # This is the guard the pipeline was missing. Upstream Xonotic has no packaging step at all — its
+    # .pk3dir IS the shipped pk3, so nothing can be lost in transit. We split by role (a 597 MB single
+    # asset means changing one map re-downloads all 31), and the split needs a classifier, and a
+    # classifier that DROPS by extension is silently lossy: `.waypoints.cache` and `.waypoints.hardwired`
+    # sat on that drop list for the life of the repo, so every shipped map carried bot waypoints with no
+    # links and no hand-authored jumps. Nothing failed; the files just were not there.
+    #
+    # So: reconcile. Anything classify() drops must match an explicitly reviewed pattern. A new file type
+    # nobody thought about fails the build instead of vanishing from the release.
+    unaccounted = sorted(n for n in files if sp.classify(n, bsps)[0] == "source"
+                         and not sp.is_known_drop(n))
+    if unaccounted:
+        sys.exit(
+            "error: these files were dropped as 'source' but match no reviewed drop pattern.\n"
+            "       Either add them to packlib.KNOWN_DROPS with a reason, or stop dropping them.\n"
+            + "".join(f"  {n}\n" for n in unaccounted[:40])
+            + (f"  ... and {len(unaccounted) - 40} more\n" if len(unaccounted) > 40 else "")
+        )
+
     maps = sorted(k[4:] for k in buckets if k.startswith("map:"))
     if set(maps) != bsps:
         sys.exit(
@@ -119,13 +176,25 @@ def main() -> int:
             f"  buckets without a bsp: {sorted(set(maps) - bsps)}\n"
             f"  bsps without a bucket: {sorted(bsps - set(maps))}"
         )
+
+    # The game pins an exact pack list in data/maps.lock.json, and a release with fewer packs does not
+    # fail anywhere downstream — the fetcher just installs what it is told about, and the missing maps
+    # quietly stop existing. So assert the count here, where we still know what we built.
+    produced = len(maps) + 1  # + the shared archive
+    if args.expect_packs is not None and produced != args.expect_packs:
+        sys.exit(
+            f"error: produced {produced} archives, expected {args.expect_packs}.\n"
+            f"       maps built: {len(maps)} ({', '.join(maps)})\n"
+            "       Every shipped map builds from sources/maps/<map>.map, so a short count means a\n"
+            "       compile failed silently or a .map went missing from sources/."
+        )
     print(f"  shared   {len(buckets['shared']):5d} files")
     print(f"  per-map  {sum(len(v) for k, v in buckets.items() if k != 'shared'):5d} files")
     if dropped:
         print(f"  dropped  {dropped} build-residue files")
 
-    # Same notice routing as split-pack: these sit beside the art in sources/, which players never
-    # fetch, while the art ships. See split-pack.py's find_notices docstring.
+    # Notice routing: these sit beside the art in sources/, which players never fetch, while the art
+    # ships. See packlib.find_notices' docstring.
     notices = sp.find_notices(args.sources)
     routing: dict[str, list[tuple[str, pathlib.Path]]] = collections.defaultdict(list)
     unrouted = []

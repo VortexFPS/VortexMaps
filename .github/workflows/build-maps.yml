@@ -264,7 +264,7 @@ jobs:
       #
       # Packages per-role (one shared archive plus one per map) and carries the per-item licence notices
       # out of sources/ into whichever archive holds the art they cover — a correctness requirement, not
-      # a nicety. See build/split-pack.py.
+      # a nicety. See build/packlib.py.
       - name: Package and emit the manifest
         run: |
           version="${GITHUB_REF_NAME#maps-}"
@@ -272,7 +272,8 @@ jobs:
           python3 build/publish.py builds/q3map2 \
             --dds builds/dds \
             --art-from sources \
-            --out dist --version "$version" --sources sources
+            --out dist --version "$version" --sources sources \
+            --expect-packs 31
 
       - name: Check the release-asset limit
         run: |
@@ -291,6 +292,10 @@ jobs:
           # .pk3, not .zip: a pk3 IS a zip, and the game mounts one natively, so fetch-maps.py installs
           # these as-is rather than extracting them. See build/README.md.
           gh release upload "$GITHUB_REF_NAME" dist/*.pk3 --clobber
+          # The manifest is what VortexArena's tools/data/update-maps-lock.py re-pins the lockfile from.
+          # Attaching it to the RELEASE (not just as a CI artifact) means that step needs nothing but the
+          # tag — no digging through a workflow run page to download an artifact by hand.
+          gh release upload "$GITHUB_REF_NAME" dist/manifest.json --clobber
 
       # data/maps.lock.json in the game repo is generated from this.
       - uses: actions/upload-artifact@v4

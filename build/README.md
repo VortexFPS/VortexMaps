@@ -13,8 +13,8 @@ iterating through configure-time dependencies.**
 | `map-compiler-config.pl` | the wrapper's config, installed to `~/.xonotic-map-compiler`. All paths from the environment, so the vendored copies need no edits |
 | `compile-map.sh` | compiles one map, moves products into `builds/q3map2/<map>/`. Replaces upstream's `-optionsfile` script, which hardcodes a `misc/tools/` path we do not have |
 | `compress-textures.sh` | compresses `textures/` and `models/` to `builds/dds/dds/…` |
-| `publish.py` | merges the three inputs into per-role archives + manifest. Imports `split-pack.py` for classification and notice routing, so the two cannot drift |
-| `split-pack.py` | bootstraps the same archives from Xonotic's shipped pk3s. **This produced the live `maps-2026.07`** |
+| `publish.py` | THE entry point: merges the three inputs into per-role archives + manifest, and reconciles what it drops against `packlib.KNOWN_DROPS` |
+| `packlib.py` | classification + licence-notice routing, imported by `publish.py`. Was `split-pack.py`, whose bootstrap half produced the live `maps-2026.07` from Xonotic's pk3s and has now been retired |
 | `q3map2.toolchain` | the compiler pin, plus each map's own flags for reference |
 
 ## Why the wrapper is vendored rather than reimplemented
@@ -104,4 +104,4 @@ The PSNR picker selected `dxt1` for the sampled cases, and the content-addressed
 **Still iterating: the q3map2 build.** CMake stops at the first `REQUIRED` miss, so each run surfaces one
 more configure-time dependency — GTK (fixed with `BUILD_RADIANT=OFF`), then OpenGL via
 `tools/heretic2` (fixed with `libgl1-mesa-dev`). Expect one or two more rounds. Nothing downstream is
-blocked: `split-pack.py` covers the frozen 0.8.6 set.
+blocked: `maps-2026.07` (produced by the retired bootstrap) covers the frozen 0.8.6 set.
